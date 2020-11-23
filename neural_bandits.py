@@ -18,9 +18,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import argparse
 
-class Net(nn.Module):
+class Net():
     def __init__(self, d, m, l, theta):
-        super(Net, self).__init__()
         # print(theta.shape)
 
         self.d = d
@@ -30,6 +29,8 @@ class Net(nn.Module):
         idx = 0
         # theta = torch.tensor(theta)
         self.W = []
+        self.x_grad = [None] * d
+        self.w_grad = [None] * l
 
         w = theta.narrow_copy(1, idx, d*m).cuda()
         w = torch.reshape(w, (m, d))
@@ -65,13 +66,28 @@ class Net(nn.Module):
         with torch.no_grad():
             self.L[l-1].weight.copy_(self.W[l-1])
 
-    def forward(self, x):
+    def get_grad(self, outputs, inputs, size):
+        grad = torch.autograd.grad(outputs=outputs, inputs=inputs)[0]
+        grad = torch.reshape(grad, (size, 1))
+        grad.cuda()
+        return grad
+
+    def forward(self, x, idx):
+        print(x.shape)
+        print(self.W[0].shape)
+
         for i in range(self.l-1):
-            x = self.L[i](x.float())
-            x = F.relu(x.float())
-        x = self.L[self.l-1](x.float())
-        x = math.sqrt(self.m) * x
+            out = self.L[i](x.float())
+            out = F.relu(out.float())
+        out = self.L[self.l-1](out.float())
+        out = math.sqrt(self.m) * out
+
+        self.x_grad[idx] = self.get_grad(outputs=out, inputs=x, size=self.d)
+
+
+
         return x
+
 
 
 #------------------------------------------------------------------------------------------------------
@@ -142,7 +158,7 @@ def lin_ucb(contexts, A, b, alpha):
     # End of TODO
     return 0 # arm
 
-def nurl_rbmle(contexts, A, theta, bias, d, m, l):
+def nurl_rbmle(contexts, A, bias, model):
     u_t = np.zeros(numActions)
     f = []
     g = []
@@ -150,20 +166,14 @@ def nurl_rbmle(contexts, A, theta, bias, d, m, l):
 
     device = torch.device("cuda") # if use_cuda else "cpu")
 
-    model = Net(d, m, l, theta).to(device)
-
     for k in range(numActions):
         temp = torch.tensor(contexts[k]).to(device)
         x.append(torch.autograd.Variable(temp, requires_grad=True))
 
 
     for k in range(numActions):
-        f.append(model.forward(x[k]))
-        # f[k].backward()
-        grad = torch.autograd.grad(outputs=f[k], inputs=x[k])[0]
-        grad = torch.reshape(grad, (3, 1))
-        grad.cuda()
-        g.append(grad)
+        f.append(model.forward(x[k], k))
+        g.append(model.x_grad[k])
     # for i in g:
     #     print(i)
     
@@ -213,8 +223,8 @@ def init_theta(d, m, l):
     return W1
 
 def L(x, r, theta, m, lda, theta_0, d, l):
-    device = torch.device("cuda") # if use_cuda else "cpu")
-    model = Net(d, m, l, theta).to(device)
+    # device = torch.device("cuda") # if use_cuda else "cpu")
+    model = Net(d, m, l, theta)
     fx = model.forward(x)
     
     return torch.matmul((fx-r).t(), (fx-r))/2 + m*lda*torch.matmul((theta - theta_0).t(), (theta - theta_0))/2
@@ -245,6 +255,8 @@ for expInd in tqdm(range(numExps)):
     lost = 0
     theta_0 = theta_n.clone()
 
+    model = Net(len(theta), 4, 3, theta_n)
+
     for t in range(1, T+1):
         contexts = allContexts[expInd, t-1, :] if isTimeVary else allContexts[expInd, :]
 
@@ -268,7 +280,7 @@ for expInd in tqdm(range(numExps)):
         bias = np.sqrt(t * np.log(t))
         mPos = methods.index("lin_rbmle")
         startTime = time.time()
-        arm, grad = nurl_rbmle(contexts, A_rbmle, theta_n, bias, len(theta), 4, 3)
+        arm, grad = nurl_rbmle(contexts, A_rbmle, bias, model)
         duration = time.time()-startTime
         allRunningTimes[mPos][expInd][t-1] = duration
         allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
