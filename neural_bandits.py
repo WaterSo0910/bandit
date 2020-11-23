@@ -25,6 +25,7 @@ class Net():
         self.d = d
         self.m = m
         self.l = l
+        # self.theta = theta
         # theta to W
         idx = 0
         # theta = torch.tensor(theta)
@@ -50,9 +51,9 @@ class Net():
         
         # init L
         self.L = []
-        self.L.append(nn.Linear(d, m).cuda())
+        self.L.append(nn.Linear(m, d).cuda())
         with torch.no_grad():
-            self.L[i].weight.copy_(self.W[i])
+            self.L[0].weight.copy_(self.W[0])
 
         for i in range(1,l-1):
             self.L.append(nn.Linear(m, m).cuda())
@@ -60,7 +61,7 @@ class Net():
                 self.L[i].weight.copy_(self.W[i])
 
         
-        self.L.append(nn.Linear(m, 1).cuda())
+        self.L.append(nn.Linear(1, m).cuda())
         # print(self.L)
         # print(self.W[l-1])
         with torch.no_grad():
