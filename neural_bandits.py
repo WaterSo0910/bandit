@@ -18,8 +18,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import argparse
 
-class Net():
+class Net(nn.Module):
     def __init__(self, d, m, l, theta):
+        super(Net, self).__init__()
         # print(theta.shape)
 
         self.d = d
@@ -48,27 +49,34 @@ class Net():
         w = torch.reshape(w, (1, m))
         self.W.append(w)
         idx = idx + 1*m
+
+        print("d= ", self.d ," m= ",self.m, " W.shape= ", np.shape(self.W))
         
         # init L
         self.L = []
-        self.L.append(nn.Linear(m, d).cuda())
+        self.L.append(nn.Linear(d, m, False).cuda())
         with torch.no_grad():
             self.L[0].weight.copy_(self.W[0])
 
         for i in range(1,l-1):
-            self.L.append(nn.Linear(m, m).cuda())
+            self.L.append(nn.Linear(m, m, False).cuda())
             with torch.no_grad():
                 self.L[i].weight.copy_(self.W[i])
 
         
-        self.L.append(nn.Linear(1, m).cuda())
+        self.L.append(nn.Linear(m, 1, False).cuda())
+        for a in self.W:
+            print(np.shape(a))
+        for a in self.L:
+            print(a)
         # print(self.L)
         # print(self.W[l-1])
-        with torch.no_grad():
-            self.L[l-1].weight.copy_(self.W[l-1])
 
+        with torch.no_grad():
+            self.L[self.l-1].weight.copy_(self.W[self.l-1])
     def get_grad(self, outputs, inputs, size):
         grad = torch.autograd.grad(outputs=outputs, inputs=inputs)[0]
+        print(np.shape(grad))
         grad = torch.reshape(grad, (size, 1))
         grad.cuda()
         return grad
@@ -80,10 +88,11 @@ class Net():
         for i in range(self.l-1):
             out = self.L[i](x.float())
             out = F.relu(out.float())
+            x = out
         out = self.L[self.l-1](out.float())
         out = math.sqrt(self.m) * out
 
-        self.x_grad[idx] = self.get_grad(outputs=out, inputs=x, size=self.d)
+        # self.x_grad[idx] = self.get_grad(outputs=out, inputs=x, size=self.d)
 
 
 
@@ -173,13 +182,21 @@ def nurl_rbmle(contexts, A, bias, model):
 
 
     for k in range(numActions):
-        f.append(model.forward(x[k], k))
-        g.append(model.x_grad[k])
-    # for i in g:
-    #     print(i)
-    
+        model = Net(3, 4, 3, theta_n)
+        out = model.forward(x[k], k)
+        f.append(out)
+        model.zero_grad()
+        #! OOPS!!! backward so hard, bro!!
+        out.backward(torch.tensor([1,1,1,1,1,1,1,1,1,1]))
+        g_temp = model.L[0].weight.grad.flatten()
+        for i in range(1,model.l):
+            g_temp = torch.cat(temp, model.L[i].weight.grad.flatten())
+        
+        g.append(g_temp)
+        
+
     for k in range(numActions):
-        u_t[k] = f[k] + 0.5 * bias * torch.mm(torch.mm(g[k].t(), torch.inverse(A).cuda()), g[k])/m
+        u_t[k] = f[k] + 0.1 *math.sqrt(torch.mm(torch.mm(g[k].t(), torch.inverse(A).cuda()), g[k])/m)
     arm = np.argmax(u_t)
     # End of TODO
     return arm, g[arm]
@@ -239,6 +256,7 @@ def TrainNN(lda, eta, U, m, x, r, theta_0, d, l):
         theta_now.requires_grad = True
         lost = L(x, r, theta_now, m, lda, theta_0, d, l)
         theta_new = theta_now - eta*torch.autograd.grad(outputs=lost, inputs=theta_now, grad_outputs=torch.ones_like(lost))[0]
+    
     return theta_new
 
 #------------------------------------------------------------------------------------------------------
@@ -247,12 +265,12 @@ for expInd in tqdm(range(numExps)):
     A_linucb = np.eye(len(theta))
     b_linucb = np.zeros(len(theta))
     alpha = 1
-    
+    theta_n = init_theta(3, 4, 3).cuda()
     # lin_rbmle
-    A_rbmle = np.eye(len(theta)) #! Vt
+    A_rbmle = np.eye(len(theta_n)) #! Vt
     A_rbmle = torch.tensor(A_rbmle).cuda()
     b_rbmle = np.zeros(len(theta)) #! Rt
-    theta_n = init_theta(3, 4, 3).cuda()
+    
     lost = 0
     theta_0 = theta_n.clone()
 
@@ -281,12 +299,11 @@ for expInd in tqdm(range(numExps)):
         bias = np.sqrt(t * np.log(t))
         mPos = methods.index("lin_rbmle")
         startTime = time.time()
-        arm, grad = nurl_rbmle(contexts, A_rbmle, bias, model)
+        arm, grad = nurl_rbmle(contexts, A_rbmle, bias, theta_n)
         duration = time.time()-startTime
         allRunningTimes[mPos][expInd][t-1] = duration
         allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
 	# TODO: Update A_rbmle, b_rbmle
-        A_rbmle = A_rbmle + torch.matmul(grad, grad.t()) / 3
         if(t==1):
             x = torch.tensor(contexts[arm]).cuda()
             x = torch.reshape(x, (1, 3))
@@ -300,7 +317,7 @@ for expInd in tqdm(range(numExps)):
             x = torch.cat((x, x_now), dim=0)
             r = torch.cat((r, r_now), dim=0)
         theta_n = TrainNN(bias, 0.01, 50, 4, x, r, theta_0, len(theta), 3)
-        
+        A_rbmle = A_rbmle + torch.matmul(grad, grad.t()) / 3
 
 	# End of TODO
 
@@ -388,3 +405,5 @@ zipfile.ZipFile(path + 'ID=' + str(excelID) + '_linbandits_seed_' + str(seed) + 
 os.remove(path + 'ID=' + str(excelID) + '_linbandits_seed_' + str(seed) + '.pickle')
 #------------------------------------------------------------------------------------------------------
 
+
+# %%
