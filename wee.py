@@ -1,10 +1,7 @@
-import numpy as np
+import torch
+from torch.autograd import Variable
 
-a = np.eye(3)
-b = np.matrix([1, 2, 3])
-print(a)
-print(b)
-print(np.matmul(a,b.T))
-for i in range(3):
-    print(i)
-
+x = Variable(torch.ones(10), requires_grad=True)
+y = x * Variable(torch.linspace(1, 10, 10), requires_grad=False)
+y.backward(torch.ones(10))
+print(y)

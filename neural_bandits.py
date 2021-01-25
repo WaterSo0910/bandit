@@ -50,7 +50,7 @@ class Net(nn.Module):
         self.W.append(w)
         idx = idx + 1*m
 
-        print("d= ", self.d ," m= ",self.m, " W.shape= ", np.shape(self.W))
+        # print("d= ", self.d ," m= ",self.m, " W.shape= ", np.shape(self.W))
         
         # init L
         self.L = []
@@ -65,10 +65,10 @@ class Net(nn.Module):
 
         
         self.L.append(nn.Linear(m, 1, False).cuda())
-        for a in self.W:
-            print(np.shape(a))
-        for a in self.L:
-            print(a)
+        # for a in self.W:
+        #     print(np.shape(a))
+        # for a in self.L:
+        #     print(a)
         # print(self.L)
         # print(self.W[l-1])
 
@@ -76,21 +76,22 @@ class Net(nn.Module):
             self.L[self.l-1].weight.copy_(self.W[self.l-1])
     def get_grad(self, outputs, inputs, size):
         grad = torch.autograd.grad(outputs=outputs, inputs=inputs)[0]
-        print(np.shape(grad))
+        # print(np.shape(grad))
         grad = torch.reshape(grad, (size, 1))
         grad.cuda()
         return grad
 
-    def forward(self, x, idx):
-        print(x.shape)
-        print(self.W[0].shape)
+    def forward(self, x):
+        # print(x.shape)
+        # print(self.W[0].shape)
 
         for i in range(self.l-1):
             out = self.L[i](x.float())
             out = F.relu(out.float())
             x = out
-        out = self.L[self.l-1](out.float())
-        out = math.sqrt(self.m) * out
+        x = self.L[self.l-1](x.float())
+        x = math.sqrt(self.m) * x
+        # print(f"x: {x}")
 
         # self.x_grad[idx] = self.get_grad(outputs=out, inputs=x, size=self.d)
 
@@ -183,20 +184,21 @@ def nurl_rbmle(contexts, A, bias, model):
 
     for k in range(numActions):
         model = Net(3, 4, 3, theta_n)
-        out = model.forward(x[k], k)
+        out = model.forward(x[k])
         f.append(out)
         model.zero_grad()
         #! OOPS!!! backward so hard, bro!!
-        out.backward(torch.tensor([1,1,1,1,1,1,1,1,1,1]))
+        out.backward()
         g_temp = model.L[0].weight.grad.flatten()
         for i in range(1,model.l):
-            g_temp = torch.cat(temp, model.L[i].weight.grad.flatten())
-        
+            g_temp = torch.cat((g_temp, model.L[i].weight.grad.flatten()))
+
+        g_temp = g_temp.unsqueeze(0).t()
         g.append(g_temp)
-        
+
 
     for k in range(numActions):
-        u_t[k] = f[k] + 0.1 *math.sqrt(torch.mm(torch.mm(g[k].t(), torch.inverse(A).cuda()), g[k])/m)
+        u_t[k] = f[k].float() + 0.1 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/4.))
     arm = np.argmax(u_t)
     # End of TODO
     return arm, g[arm]
@@ -266,8 +268,9 @@ for expInd in tqdm(range(numExps)):
     b_linucb = np.zeros(len(theta))
     alpha = 1
     theta_n = init_theta(3, 4, 3).cuda()
+    # print(f'theta_n: {theta_n.shape}')
     # lin_rbmle
-    A_rbmle = np.eye(len(theta_n)) #! Vt
+    A_rbmle = np.eye(theta_n.shape[1]) #! Vt
     A_rbmle = torch.tensor(A_rbmle).cuda()
     b_rbmle = np.zeros(len(theta)) #! Rt
     
