@@ -246,9 +246,10 @@ def init_theta(d, m, l):
 def L(x, r, theta_now, m, lda, theta_0, d, l, g):
     # device = torch.device("cuda") # if use_cuda else "cpu")
     theta_now.detach().requires_grad = True
-    y = m*lda*torch.matmul((theta_now - theta_0), (theta_now - theta_0).t())/2.
-    y.backward()
-    theta_grad = theta_now.grad
+    # y = m*lda*torch.matmul((theta_now - theta_0), (theta_now - theta_0).t())/2.
+    theta_grad = m * lda * (theta_now - theta_0)
+    # y.backward()
+    # theta_grad = theta_now.grad
     theta_now.detach().requires_grad = False
     model = Net(d, m, l, theta_now)
     fx = model.forward(x)
