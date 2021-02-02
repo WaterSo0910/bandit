@@ -106,8 +106,8 @@ theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
 isTimeVary = False
-numExps = 1
-T = int(3e4)
+numExps = 20
+T = int(8000)
 seed = 46
 path = ""
 
@@ -198,9 +198,9 @@ def nurl_rbmle(contexts, A, bias, theta_n):
 
 
     for k in range(numActions):
-        u_t[k] = f[k].float() + 0.2 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/4.))
+        u_t[k] = f[k].float() + 0.0001 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/4.))
     arm = np.argmax(u_t)
-    print(f'f[arm]: {f[arm]}, var[arm]: {u_t[arm]-f[arm]}')
+    # print(f'f[arm]: {f[arm]}, var[arm]: {u_t[arm]-f[arm]}')
     # End of TODO
     return arm, g[arm]
 
@@ -245,15 +245,18 @@ def init_theta(d, m, l):
 
 def L(x, r, theta_now, m, lda, theta_0, d, l, g):
     # device = torch.device("cuda") # if use_cuda else "cpu")
-    theta_now.detach().requires_grad = True
+    # theta_now.detach().requires_grad = True
     # y = m*lda*torch.matmul((theta_now - theta_0), (theta_now - theta_0).t())/2.
-    theta_grad = m * lda * (theta_now - theta_0)
+    # theta_grad = m * lda * (theta_now - theta_0)
+    # print("theta_now ", theta_now)
+    # print("theta_0 ", theta_0)
     # y.backward()
     # theta_grad = theta_now.grad
-    theta_now.detach().requires_grad = False
+    # theta_now.detach().requires_grad = False
     model = Net(d, m, l, theta_now)
     fx = model.forward(x)
-    theta_grad += torch.matmul((fx-r).t().float(), g.t())
+    # print("fx ", fx)
+    theta_grad = torch.matmul((fx-r).t().float(), g.t())
     return theta_grad
 
 
@@ -267,11 +270,11 @@ def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g):
         theta_grad = L(x, r, theta_now, m, lda, theta_0, d, l, g)
         
         # theta_grad = torch.autograd.grad(outputs=lost, inputs=theta_now, grad_outputs=torch.ones_like(lost))
-        print("lost ",lost)
-        print("theta_grad ", theta_grad)
-        theta_new = theta_now - eta*theta_grad[0]
+        # print("lost ",lost)
+        theta_new = theta_now - eta*theta_grad
         theta_now = theta_new.clone()
     
+    # print("theta_new ", theta_new)
     return theta_new
 
 #------------------------------------------------------------------------------------------------------
@@ -334,9 +337,9 @@ for expInd in tqdm(range(numExps)):
             x = torch.cat((x, x_now), dim=0)
             r = torch.cat((r, r_now), dim=0)
             g = torch.cat((g, grad_now), dim=1)
-        print("meanRewards[arm]= ",  meanRewards[arm])
-        theta_n = TrainNN(bias, 0.1, 20, 4, x, r, theta_0, len(theta), 3, g)
-        A_rbmle = A_rbmle + torch.matmul(grad, grad.t()) / 3
+        # print("meanRewards[arm]= ",  meanRewards[arm])
+        theta_n = TrainNN(bias, 0.0001, 20, 4, x, r, theta_0, len(theta), 3, g)
+        A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 3
 
 	# End of TODO
 
@@ -379,7 +382,7 @@ finalRegretQuantiles = np.quantile(cumRegrets[:,:,-1], q=quantiles, axis=1)
 
 ##
 plt.plot(range(1, T+1), meanRegrets[methods.index("lin_rbmle")])
-plt.ylim(0, 2500)
+# plt.ylim(0, 2500)
 plt.show()
 ##
 
