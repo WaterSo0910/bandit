@@ -106,8 +106,8 @@ theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
 isTimeVary = False
-numExps = 20
-T = int(8000)
+numExps = 50
+T = int(10000)
 seed = 46
 path = ""
 
@@ -198,7 +198,7 @@ def nurl_rbmle(contexts, A, bias, theta_n):
 
 
     for k in range(numActions):
-        u_t[k] = f[k].float() + 0.0001 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/4.))
+        u_t[k] = f[k].float() + 0.0002 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/4.))
     arm = np.argmax(u_t)
     # print(f'f[arm]: {f[arm]}, var[arm]: {u_t[arm]-f[arm]}')
     # End of TODO
@@ -338,7 +338,7 @@ for expInd in tqdm(range(numExps)):
             r = torch.cat((r, r_now), dim=0)
             g = torch.cat((g, grad_now), dim=1)
         # print("meanRewards[arm]= ",  meanRewards[arm])
-        theta_n = TrainNN(bias, 0.0001, 20, 4, x, r, theta_0, len(theta), 3, g)
+        theta_n = TrainNN(bias, 0.0002, 20, 4, x, r, theta_0, len(theta), 3, g)
         A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 3
 
 	# End of TODO
