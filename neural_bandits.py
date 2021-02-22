@@ -106,8 +106,8 @@ theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
 isTimeVary = False
-numExps = 50
-T = int(10000)
+numExps = 10
+T = int(8000)
 seed = 46
 path = ""
 
