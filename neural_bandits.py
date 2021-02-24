@@ -19,83 +19,28 @@ import torch.nn.functional as F
 import argparse
 
 class Net(nn.Module):
-    def __init__(self, d, m, l, theta):
+    def __init__(self, d, m, l):
         super(Net, self).__init__()
-        # print(theta.shape)
 
-        self.d = d
-        self.m = m
         self.l = l
-        # self.theta = theta
-        # theta to W
-        idx = 0
-        # theta = torch.tensor(theta)
-        self.W = []
-        self.x_grad = [None] * d
-        self.w_grad = [None] * l
-
-        w = theta.narrow_copy(1, idx, d*m).cuda()
-        w = torch.reshape(w, (m, d))
-        self.W.append(w)
-        idx = idx + d*m
-
-        for i in range(l-2):
-            w = theta.narrow_copy(1, idx, m*m).cuda()
-            w = torch.reshape(w, (m, m))
-            self.W.append(w)
-            idx = idx + m*m
-
-        w = theta.narrow_copy(1, idx, m).cuda()
-        w = torch.reshape(w, (1, m))
-        self.W.append(w)
-        idx = idx + 1*m
-
-        # print("d= ", self.d ," m= ",self.m, " W.shape= ", np.shape(self.W))
-        
-        # init L
-        self.L = []
-        self.L.append(nn.Linear(d, m, False).cuda())
-        with torch.no_grad():
-            self.L[0].weight.copy_(self.W[0])
-
-        for i in range(1,l-1):
-            self.L.append(nn.Linear(m, m, False).cuda())
-            with torch.no_grad():
-                self.L[i].weight.copy_(self.W[i])
-
-        
-        self.L.append(nn.Linear(m, 1, False).cuda())
-        # for a in self.W:
-        #     print(np.shape(a))
-        # for a in self.L:
-        #     print(a)
-        # print(self.L)
-        # print(self.W[l-1])
-
-        with torch.no_grad():
-            self.L[self.l-1].weight.copy_(self.W[self.l-1])
-    def get_grad(self, outputs, inputs, size):
-        grad = torch.autograd.grad(outputs=outputs, inputs=inputs)[0]
-        # print(np.shape(grad))
-        grad = torch.reshape(grad, (size, 1))
-        grad.cuda()
-        return grad
+        self.m = m
+        self.d = d
+        self.fc1 = nn.Linear(d, m, False).cuda()
+        self.fc2 = nn.Linear(m, 1, False).cuda()
 
     def forward(self, x):
         # print(x.shape)
         # print(self.W[0].shape)
 
         for i in range(self.l-1):
-            out = self.L[i](x.float())
+            out = self.fc1(x.float())
             out = F.relu(out.float())
             x = out
-        x = self.L[self.l-1](x.float())
+        x = self.fc2(x.float())
         x = math.sqrt(self.m) * x
         # print(f"x: {x}")
 
         # self.x_grad[idx] = self.get_grad(outputs=out, inputs=x, size=self.d)
-
-
 
         return x
 
@@ -106,10 +51,11 @@ theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
 isTimeVary = False
-numExps = 10
-T = int(8000)
+numExps = 1
+T = int(10000)
 seed = 46
 path = ""
+
 
 #---(Optional) a constraint on the norm of theta-------------------------------------------------------
 if np.linalg.norm(theta) >= 1:
@@ -123,6 +69,7 @@ allRegrets = np.zeros((numMethods, numExps, T), dtype=float)
 allRunningTimes = np.zeros((numMethods, numExps, T), dtype=float)
 np.random.seed(seed)
 rewardSigma = 1
+torch.manual_seed(seed)
 
 def generate_norm_contexts(contextMus, contextSigma, numExps, T, numActions, isTimeVary):
     if isTimeVary:
@@ -183,25 +130,31 @@ def nurl_rbmle(contexts, A, bias, theta_n):
 
 
     for k in range(numActions):
-        model = Net(3, 4, 3, theta_n)
+        model = Net(3, 40, 2)
+        # print(model.state_dict())
+        model.state_dict()['fc1.weight'][:] = torch.narrow(theta_n, 1, 0, 120).resize(40, 3)
+        model.state_dict()['fc2.weight'][:] = torch.narrow(theta_n, 1, 120, 40).resize(1, 40)
+
         out = model.forward(x[k])
         f.append(out)
         model.zero_grad()
-        #! OOPS!!! backward so hard, bro!!
         out.backward()
-        g_temp = model.L[0].weight.grad.flatten()
-        for i in range(1,model.l):
-            g_temp = torch.cat((g_temp, model.L[i].weight.grad.flatten()))
+        g_temp = model.fc1.weight.grad.flatten()
+        g_temp = torch.cat((g_temp, model.fc2.weight.grad.flatten())).resize(160, 1)
+        # g_temp = model.L[0].weight.grad.flatten()
+        # for i in range(1,model.l):
+        #     g_temp = torch.cat((g_temp, model.L[i].weight.grad.flatten()))
 
-        g_temp = g_temp.unsqueeze(0).t()
+        # g_temp = g_temp.unsqueeze(0).t()
         g.append(g_temp)
 
 
     for k in range(numActions):
-        u_t[k] = f[k].float() + 0.0002 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/4.))
+        u_t[k] = f[k].float() + 0.1 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/40.))
     arm = np.argmax(u_t)
     # print(f'f[arm]: {f[arm]}, var[arm]: {u_t[arm]-f[arm]}')
     # End of TODO
+    print('arm: ', str(arm))
     return arm, g[arm]
 
 def lin_ts(contexts, A, b, v_lints):
@@ -253,10 +206,20 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g):
     # y.backward()
     # theta_grad = theta_now.grad
     # theta_now.detach().requires_grad = False
-    model = Net(d, m, l, theta_now)
+    model = Net(d, m, l)
+    model.state_dict()['fc1.weight'][:] = torch.narrow(theta_now, 1, 0, 120).reshape(40, 3)
+    model.state_dict()['fc2.weight'][:] = torch.narrow(theta_now, 1, 120, 40).reshape(1, 40)
+
     fx = model.forward(x)
     # print("fx ", fx)
-    theta_grad = torch.matmul((fx-r).t().float(), g.t())
+    ll = torch.matmul((fx-r).t().float(), (fx-r).float())/2
+    model.zero_grad()
+    ll.backward()
+
+    theta_grad = model.fc1.weight.grad.flatten()
+    theta_grad = torch.cat((theta_grad, model.fc2.weight.grad.flatten())).resize(1, 160)
+
+
     return theta_grad
 
 
@@ -273,6 +236,8 @@ def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g):
         # print("lost ",lost)
         theta_new = theta_now - eta*theta_grad
         theta_now = theta_new.clone()
+
+    aaa = 1
     
     # print("theta_new ", theta_new)
     return theta_new
@@ -283,17 +248,16 @@ for expInd in tqdm(range(numExps)):
     A_linucb = np.eye(len(theta))
     b_linucb = np.zeros(len(theta))
     alpha = 1
-    theta_n = init_theta(3, 4, 3).cuda()
+    theta_n = init_theta(len(theta), 40, 2).cuda()
     # print(f'theta_n: {theta_n.shape}')
     # lin_rbmle
-    A_rbmle = np.eye(theta_n.shape[1]) #! Vt
+    A_rbmle = 0.01 * np.eye(theta_n.shape[1]) #! Vt
     A_rbmle = torch.tensor(A_rbmle).cuda()
     b_rbmle = np.zeros(len(theta)) #! Rt
     
     lost = 0
     theta_0 = theta_n.clone()
 
-    model = Net(len(theta), 4, 3, theta_n)
 
     for t in range(1, T+1):
         contexts = allContexts[expInd, t-1, :] if isTimeVary else allContexts[expInd, :]
@@ -310,6 +274,7 @@ for expInd in tqdm(range(numExps)):
         duration = time.time()-startTime
         allRunningTimes[mPos][expInd][t-1] = duration
         allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
+        print('regrets: ', str(np.sum(allRegrets[mPos][expInd])))
 	# TODO: Update A_linucb, b_linucb
         # A_linucb=A_linucb+np.matmul(contexts[arm], np.transpose(contexts[arm]))
         # b_linucb=b_linucb+contexts[arm]*rewards[arm]
@@ -338,8 +303,9 @@ for expInd in tqdm(range(numExps)):
             r = torch.cat((r, r_now), dim=0)
             g = torch.cat((g, grad_now), dim=1)
         # print("meanRewards[arm]= ",  meanRewards[arm])
-        theta_n = TrainNN(bias, 0.0002, 20, 4, x, r, theta_0, len(theta), 3, g)
-        A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 3
+        print('t: ' + str(t))
+        theta_n = TrainNN(0.01, 0.001, t, 40, x, r, theta_0, len(theta), 2, g)
+        A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
 
 	# End of TODO
 
