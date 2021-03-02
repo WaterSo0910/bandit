@@ -52,8 +52,8 @@ excelID = 2
 numActions = 10
 isTimeVary = False
 numExps = 1
-T = int(10000)
-seed = 46
+T = int(3e4)
+seed = 49
 path = ""
 
 
@@ -116,7 +116,7 @@ def lin_ucb(contexts, A, b, alpha):
     # End of TODO
     return 0 # arm
 
-def nurl_rbmle(contexts, A, bias, theta_n):
+def nurl_rbmle(contexts, A, bias, theta_n, good):
     u_t = np.zeros(numActions)
     f = []
     g = []
@@ -135,9 +135,9 @@ def nurl_rbmle(contexts, A, bias, theta_n):
         model.state_dict()['fc1.weight'][:] = torch.narrow(theta_n, 1, 0, 120).resize(40, 3)
         model.state_dict()['fc2.weight'][:] = torch.narrow(theta_n, 1, 120, 40).resize(1, 40)
 
+        model.zero_grad()
         out = model.forward(x[k])
         f.append(out)
-        model.zero_grad()
         out.backward()
         g_temp = model.fc1.weight.grad.flatten()
         g_temp = torch.cat((g_temp, model.fc2.weight.grad.flatten())).resize(160, 1)
@@ -150,12 +150,12 @@ def nurl_rbmle(contexts, A, bias, theta_n):
 
 
     for k in range(numActions):
-        u_t[k] = f[k].float() + 0.1 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/40.))
+        u_t[k] = f[k].float() + 0.4567 *math.sqrt((torch.mm(torch.mm(g[k].t().float(), torch.inverse(A.float()).cuda()), g[k].float())/40.))
     arm = np.argmax(u_t)
     # print(f'f[arm]: {f[arm]}, var[arm]: {u_t[arm]-f[arm]}')
     # End of TODO
     print('arm: ', str(arm))
-    return arm, g[arm]
+    return arm, g[arm], f[good]
 
 def lin_ts(contexts, A, b, v_lints):
     # TODO: Implement LinRBMLE
@@ -210,10 +210,14 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g):
     model.state_dict()['fc1.weight'][:] = torch.narrow(theta_now, 1, 0, 120).reshape(40, 3)
     model.state_dict()['fc2.weight'][:] = torch.narrow(theta_now, 1, 120, 40).reshape(1, 40)
 
+    model.zero_grad()
     fx = model.forward(x)
     # print("fx ", fx)
-    ll = torch.matmul((fx-r).t().float(), (fx-r).float())/2
-    model.zero_grad()
+    loss = nn.MSELoss(reduction='sum')
+    ll = loss(fx.double(), r.double())
+    # for i in range(len(fx)):
+    #     ll += (fx[i] - r[i]) ** 2 / 2
+    # ll = torch.matmul((fx-r).t().float(), (fx-r).float())/2
     ll.backward()
 
     theta_grad = model.fc1.weight.grad.flatten()
@@ -236,8 +240,6 @@ def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g):
         # print("lost ",lost)
         theta_new = theta_now - eta*theta_grad
         theta_now = theta_new.clone()
-
-    aaa = 1
     
     # print("theta_new ", theta_new)
     return theta_new
@@ -258,7 +260,7 @@ for expInd in tqdm(range(numExps)):
     lost = 0
     theta_0 = theta_n.clone()
 
-
+    Fx = []
     for t in range(1, T+1):
         contexts = allContexts[expInd, t-1, :] if isTimeVary else allContexts[expInd, :]
 
@@ -266,6 +268,9 @@ for expInd in tqdm(range(numExps)):
 
         rewards = allRewards[expInd, t-1, :]
         meanRewards = allMeanRewards[expInd, t-1, :]
+
+        good = np.argmax(meanRewards)
+
         maxMean = np.max(meanRewards)
     #------------------------------------------------------------------------------------------------
         mPos  = methods.index("lin_ucb")
@@ -274,7 +279,7 @@ for expInd in tqdm(range(numExps)):
         duration = time.time()-startTime
         allRunningTimes[mPos][expInd][t-1] = duration
         allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
-        print('regrets: ', str(np.sum(allRegrets[mPos][expInd])))
+        # print('regrets: ', str(np.sum(allRegrets[mPos][expInd])))
 	# TODO: Update A_linucb, b_linucb
         # A_linucb=A_linucb+np.matmul(contexts[arm], np.transpose(contexts[arm]))
         # b_linucb=b_linucb+contexts[arm]*rewards[arm]
@@ -283,7 +288,8 @@ for expInd in tqdm(range(numExps)):
         bias = np.sqrt(t * np.log(t))
         mPos = methods.index("lin_rbmle")
         startTime = time.time()
-        arm, grad_now = nurl_rbmle(contexts, A_rbmle, bias, theta_n)
+        arm, grad_now, fx = nurl_rbmle(contexts, A_rbmle, bias, theta_n, good)
+        Fx.append(fx)
         duration = time.time()-startTime
         allRunningTimes[mPos][expInd][t-1] = duration
         allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
@@ -304,8 +310,12 @@ for expInd in tqdm(range(numExps)):
             g = torch.cat((g, grad_now), dim=1)
         # print("meanRewards[arm]= ",  meanRewards[arm])
         print('t: ' + str(t))
-        theta_n = TrainNN(0.01, 0.001, t, 40, x, r, theta_0, len(theta), 2, g)
+        theta_n = TrainNN(0.01, 0.00001, t if t<700 else 700, 40, x, r, theta_0, len(theta), 2, g)
         A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
+
+    if expInd == 2:
+        plt.plot(range(1, T+1), Fx)
+        plt.show()
 
 	# End of TODO
 

@@ -20,10 +20,10 @@ import torch.nn.functional as F
 #------------------------------------------------------------------------------------------------------
 theta = np.array([-0.3,0.5,0.8])
 excelID = 2
-numActions = 10
+numActions = 2
 isTimeVary = False
 numExps = 1
-T = int(1e4)
+T = int(1e6)
 seed = 46
 path = ""
 
@@ -187,7 +187,7 @@ finalRegretQuantiles = np.quantile(cumRegrets[:,:,-1], q=quantiles, axis=1)
 
 ##
 plt.plot(range(1, T+1), meanRegrets[methods.index("lin_rbmle")])
-plt.ylim(0, 2500)
+# plt.ylim(0, 2500)
 plt.show()
 ##
 
