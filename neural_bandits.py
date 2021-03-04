@@ -218,9 +218,12 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
 
     model.zero_grad()
     fx = model.forward(x)
+
+    weight = model.fc1.weight.flatten()
+    weight = torch.cat((weight, model.fc2.weight.flatten())).resize(1, 160)
     # print("fx ", fx)
     loss = nn.MSELoss(reduction='sum')
-    ll = loss(fx.double(), r.double()) + m*lda*loss(theta_now, theta_0)
+    ll = loss(fx.double(), r.double()) + m*lda*loss(weight, theta_0)
     # y = m*lda*torch.matmul((theta_now - theta_0), (theta_now - theta_0).t())/2.
     # ll = ll + y
     # for i in range(len(fx)):
@@ -230,9 +233,6 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
 
     theta_grad = model.fc1.weight.grad.flatten()
     theta_grad = torch.cat((theta_grad, model.fc2.weight.grad.flatten())).resize(1, 160)/2.
-
-    weight = model.fc1.weight.flatten()
-    weight = torch.cat((weight, model.fc2.weight.flatten())).resize(1, 160)
 
     return theta_grad
 
