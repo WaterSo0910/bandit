@@ -325,8 +325,8 @@ for expInd in tqdm(range(numExps)):
             g = torch.cat((g, grad_now), dim=1)
         # print("meanRewards[arm]= ",  meanRewards[arm])
         print('t: ' + str(t))
-        lr = decayed_learning_rate(1e-5, t, 300, 0)
-        theta_n = TrainNN(0.01, 1e-5, t if t<300 else 300, 40, x, r, theta_0, len(theta), 2, g, Fx)
+        lr = decayed_learning_rate(1e-5, t, 300, 0.9)
+        theta_n = TrainNN(0.01, lr, t if t<300 else 300, 40, x, r, theta_0, len(theta), 2, g, Fx)
         A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
 
     if expInd == 19:
