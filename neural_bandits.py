@@ -332,7 +332,7 @@ for expInd in tqdm(range(numExps)):
         theta_n = TrainNN(0.01, lr, t if t<300 else 300, 40, x, r, theta_0, len(theta), 2, g, Fx)
         A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
 
-    if expInd == 19:
+    if expInd == 0:
         plt.plot(range(1, T+1), Fx)
         plt.show()
 
