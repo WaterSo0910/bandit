@@ -212,6 +212,9 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
     # y.backward()
     # theta_grad = theta_now.grad
     # theta_now.detach().requires_grad = False
+
+    torch.autograd.Variable(x, requires_grad=True)
+
     model = Net(d, m, l)
     model.state_dict()['fc1.weight'][:] = torch.narrow(theta_now, 1, 0, 120).reshape(40, 3)
     model.state_dict()['fc2.weight'][:] = torch.narrow(theta_now, 1, 120, 40).reshape(1, 40)
@@ -240,7 +243,7 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
 def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g, Fx):
 
     theta_now = theta_0.clone()
-    theta_now.requires_grad = True
+    # theta_now.requires_grad = True
 
     if len(Fx)==24000:
         print('ghueigehjo? uhrwg.')
