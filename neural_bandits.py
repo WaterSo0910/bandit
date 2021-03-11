@@ -12,8 +12,11 @@ import zipfile
 import os
 import math
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('GTK3Cairo')
 
 import torch
+from  torch import linalg as LA
 import torch.nn as nn
 import torch.nn.functional as F
 import argparse
@@ -51,7 +54,7 @@ theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
 isTimeVary = False
-numExps = 1
+numExps = 50
 T = int(3e4)
 seed = 46
 path = ""
@@ -131,12 +134,13 @@ def nurl_rbmle(contexts, A, bias, theta_n, good):
 
     for k in range(numActions):
         model = Net(3, 40, 2)
-        # print(model.state_dict())
-        model.state_dict()['fc1.weight'][:] = torch.narrow(theta_n, 1, 0, 120).resize(40, 3)
-        model.state_dict()['fc2.weight'][:] = torch.narrow(theta_n, 1, 120, 40).resize(1, 40)
 
-        model.zero_grad()
+        # print(model.state_dict())
+        model.state_dict()['fc1.weight'][:] = torch.narrow(theta_n, 1, 0, 120).reshape(40, 3)
+        model.state_dict()['fc2.weight'][:] = torch.narrow(theta_n, 1, 120, 40).reshape(1, 40)
+
         out = model.forward(x[k])
+        model.zero_grad()
         f.append(out)
         out.backward()
         g_temp = model.fc1.weight.grad.flatten()
@@ -202,6 +206,9 @@ def decayed_learning_rate(initial_learning_rate, step, decay_steps, alpha):
   decayed = (1 - alpha) * cosine_decay + alpha
   return initial_learning_rate * decayed
 
+
+
+L2norm = []
 def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
     # device = torch.device("cuda") # if use_cuda else "cpu")
     # theta_now.detach().requires_grad = True
@@ -219,14 +226,18 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
     model.state_dict()['fc1.weight'][:] = torch.narrow(theta_now, 1, 0, 120).reshape(40, 3)
     model.state_dict()['fc2.weight'][:] = torch.narrow(theta_now, 1, 120, 40).reshape(1, 40)
 
-    model.zero_grad()
     fx = model.forward(x)
+    model.zero_grad()
 
     weight = model.fc1.weight.flatten()
-    weight = torch.cat((weight, model.fc2.weight.flatten())).resize(1, 160)
+    weight = torch.cat((weight, model.fc2.weight.flatten())).reshape(1, 160)
     # print("fx ", fx)
-    loss = nn.MSELoss(reduction='sum')
-    ll = loss(fx.double(), r.double()) + m*lda*loss(weight, theta_0)
+    loss = nn.MSELoss(reduction='mean')
+    ll = loss(fx.double(), r.double())
+    norm = torch.norm(theta_now-theta_0) * m * lda
+    ll += norm
+    # + m * lda * torch.mm((theta_now - theta_0), (theta_now - theta_0).t())
+
     # y = m*lda*torch.matmul((theta_now - theta_0), (theta_now - theta_0).t())/2.
     # ll = ll + y
     # for i in range(len(fx)):
@@ -235,9 +246,9 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
     ll.backward()
 
     theta_grad = model.fc1.weight.grad.flatten()
-    theta_grad = torch.cat((theta_grad, model.fc2.weight.grad.flatten())).resize(1, 160)/2.
+    theta_grad = torch.cat((theta_grad, model.fc2.weight.grad.flatten())).reshape(1, 160)
 
-    return theta_grad
+    return theta_grad, norm
 
 
 def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g, Fx):
@@ -245,22 +256,21 @@ def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g, Fx):
     theta_now = theta_0.clone()
     # theta_now.requires_grad = True
 
-    if len(Fx)==24000:
-        print('ghueigehjo? uhrwg.')
-        plt.plot(range(1, 24000+1), Fx)
-        plt.show()
-
     for i in range(U):
         # theta_now.detach().requires_grad = True
-        theta_grad = L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx)
-        
+        theta_grad, l2norm = L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx)
+        if i == U-1:
+            L2norm.append(l2norm)
+        # if i==20 and len(Fx)==300:
+        #     print('theta_grad: ', str(theta_grad))
+        #     print('theta_now: ', str(theta_now))
+        #     input()
         # theta_grad = torch.autograd.grad(outputs=lost, inputs=theta_now, grad_outputs=torch.ones_like(lost))
         # print("lost ",lost)
-        theta_new = theta_now - eta*theta_grad
-        theta_now = theta_new.clone()
+        theta_now = theta_now - eta*theta_grad
     
     # print("theta_new ", theta_new)
-    return theta_new
+    return theta_now
 
 #------------------------------------------------------------------------------------------------------
 for expInd in tqdm(range(numExps)):
@@ -286,6 +296,10 @@ for expInd in tqdm(range(numExps)):
 
         rewards = allRewards[expInd, t-1, :]
         meanRewards = allMeanRewards[expInd, t-1, :]
+
+        #*    HELLO WAKKA
+        #!    HELLO WAKKA
+        #TODO HELLO WAKKA
 
         good = np.argmax(meanRewards)
 
@@ -328,13 +342,15 @@ for expInd in tqdm(range(numExps)):
             g = torch.cat((g, grad_now), dim=1)
         # print("meanRewards[arm]= ",  meanRewards[arm])
         print('t: ' + str(t))
-        lr = decayed_learning_rate(1e-5, t, 300, 0.9)
-        theta_n = TrainNN(0.01, lr, t if t<300 else 300, 40, x, r, theta_0, len(theta), 2, g, Fx)
+        # lr = decayed_learning_rate(1e-5, t, 300, 0.99)
+        theta_n = TrainNN(0.01, 1e-4, t if t<200 else 200, 40, x, r, theta_0, len(theta), 2, g, Fx)
         A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
 
-    if expInd == 0:
-        plt.plot(range(1, T+1), Fx)
-        plt.show()
+    # if expInd == 0:
+    #     plt.plot(range(1, T+1), Fx)
+    #     plt.show()
+    #     plt.plot(range(1, T+1), L2norm)
+    #     plt.show()
 
 	# End of TODO
 
