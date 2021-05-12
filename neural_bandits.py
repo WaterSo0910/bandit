@@ -53,8 +53,8 @@ class Net(nn.Module):
 theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
-isTimeVary = False
-numExps = 50
+isTimeVary = True
+numExps = 10
 T = int(3e4)
 seed = 46
 path = ""
@@ -96,7 +96,8 @@ def generate_rewards(theta, contexts, isTimeVary, T, rewardSigma):
     for i in range(numExps):
         for j in range(T):
             tempContexts = contexts[i, j] if isTimeVary else contexts[i]
-            tempMus = np.array([np.dot(theta, context) for context in tempContexts])
+            #* non-linear rewards
+            tempMus = np.array([np.dot(theta, context) for context in tempContexts]) 
             meanRewards[i, j] = tempMus
             allRewards[i, j] = np.random.multivariate_normal(tempMus, tempSigma)
     return meanRewards, allRewards
@@ -284,11 +285,15 @@ for expInd in tqdm(range(numExps)):
     A_rbmle = 0.01 * np.eye(theta_n.shape[1]) #! Vt
     A_rbmle = torch.tensor(A_rbmle).cuda()
     b_rbmle = np.zeros(len(theta)) #! Rt
+    Z_inverse = torch.inverse(A_rbmle)
     
     lost = 0
     theta_0 = theta_n.clone()
 
     Fx = []
+    Z = []
+    Z_meanAll = []
+    Z_real = []
     for t in range(1, T+1):
         contexts = allContexts[expInd, t-1, :] if isTimeVary else allContexts[expInd, :]
 
@@ -343,14 +348,34 @@ for expInd in tqdm(range(numExps)):
         # print("meanRewards[arm]= ",  meanRewards[arm])
         print('t: ' + str(t))
         # lr = decayed_learning_rate(1e-5, t, 300, 0.99)
-        theta_n = TrainNN(0.01, 1e-4, t if t<200 else 200, 40, x, r, theta_0, len(theta), 2, g, Fx)
-        A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
+        if t%50==0:
+            theta_n = TrainNN(0.01, 1e-2, t if t<200 else 200, 40, x, r, theta_0, len(theta), 2, g, Fx)
+            A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
+        # Z_inverse_new = torch.inverse(A_rbmle)
+        # z = Z_inverse_new - Z_inverse
+        # Z_inverse = Z_inverse_new
+        # z = np.absolute(z.cpu().detach().numpy())
+        # Z_meanAll.append(np.mean(np.reshape(z, -1)))
+        # Z.append(z)
+        # Z_real.append(Z_inverse_new.cpu().detach().numpy())
 
-    # if expInd == 0:
-    #     plt.plot(range(1, T+1), Fx)
-    #     plt.show()
-    #     plt.plot(range(1, T+1), L2norm)
-    #     plt.show()
+    if numExps == 1:
+        plt.plot(range(1, T+1), Z_meanAll, label = 'meanAll')
+        Z = np.array(Z)
+        Z_real = np.array(Z_real)
+        Z_mean = np.mean(Z, axis=0)
+        Z_std = np.std(Z, axis=0)
+        for i in range(4):
+            idx_maxMean = np.unravel_index(Z_mean.argmax(), Z_mean.shape)
+            idx_maxStd = np.unravel_index(Z_std.argmax(), Z_std.shape)
+            plt.plot(range(1, T+1), Z[:, idx_maxMean[0], idx_maxMean[1]], label='Z'+str(i))
+            plt.plot(range(1, T+1), Z_real[:, idx_maxMean[0], idx_maxMean[1]], label='Z_real'+str(i))
+            # plt.plot(range(1, T+1), Z[:, idx_maxStd[0], idx_maxStd[1]], label='maxStd'+str(i))
+            Z_mean[idx_maxMean[0], idx_maxMean[1]] = 0
+            Z_std[idx_maxStd[0], idx_maxStd[1]] = 0
+
+            plt.legend()
+            plt.show()
 
 	# End of TODO
 
