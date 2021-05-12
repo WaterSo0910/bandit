@@ -1,9 +1,7 @@
-
 # coding: utf-8
 
 # In[ ]:
-import os
-os.environ["KMP_DUPLICATE_LIB_OK"]  =  "TRUE"
+
 import numpy as np
 from tqdm import tqdm
 from scipy.stats import norm
@@ -15,6 +13,7 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib
 # matplotlib.use('GTK3Cairo')
+# os.environ["KMP_DUPLICATE_LIB_OK"]  =  "TRUE"
 
 import torch
 from  torch import linalg as LA
@@ -145,7 +144,7 @@ def nurl_rbmle(contexts, A, bias, theta_n, good):
         f.append(out)
         out.backward()
         g_temp = model.fc1.weight.grad.flatten()
-        g_temp = torch.cat((g_temp, model.fc2.weight.grad.flatten())).reshape(160, 1)
+        g_temp = torch.cat((g_temp, model.fc2.weight.grad.flatten())).resize(160, 1)
         # g_temp = model.L[0].weight.grad.flatten()
         # for i in range(1,model.l):
         #     g_temp = torch.cat((g_temp, model.L[i].weight.grad.flatten()))
@@ -210,7 +209,7 @@ def decayed_learning_rate(initial_learning_rate, step, decay_steps, alpha):
 
 
 L2norm = []
-def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx, A_rbmle):
+def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx):
     # device = torch.device("cuda") # if use_cuda else "cpu")
     # theta_now.detach().requires_grad = True
     # y = m*lda*torch.matmul((theta_now - theta_0), (theta_now - theta_0).t())/2.
@@ -227,20 +226,18 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx, A_rbmle):
     model.state_dict()['fc1.weight'][:] = torch.narrow(theta_now, 1, 0, 120).reshape(40, 3)
     model.state_dict()['fc2.weight'][:] = torch.narrow(theta_now, 1, 120, 40).reshape(1, 40)
 
-    # fx = model.forward(x)
+    fx = model.forward(x)
     model.zero_grad()
 
     weight = model.fc1.weight.flatten()
     weight = torch.cat((weight, model.fc2.weight.flatten())).reshape(1, 160)
     # print("fx ", fx)
-
     loss = nn.MSELoss(reduction='mean')
-    ll = loss(Fx.double()[-1].squeeze(-1), r.double()[-1].squeeze(-1))
-
+    ll = loss(fx.double(), r.double())
     norm = torch.norm(theta_now-theta_0) * m * lda
     ll += norm
-
     # + m * lda * torch.mm((theta_now - theta_0), (theta_now - theta_0).t())
+
     # y = m*lda*torch.matmul((theta_now - theta_0), (theta_now - theta_0).t())/2.
     # ll = ll + y
     # for i in range(len(fx)):
@@ -250,18 +247,18 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx, A_rbmle):
 
     theta_grad = model.fc1.weight.grad.flatten()
     theta_grad = torch.cat((theta_grad, model.fc2.weight.grad.flatten())).reshape(1, 160)
-    theta_grad = torch.mm(theta_grad, torch.mm(torch.inverse(A_rbmle), g))
+
     return theta_grad, norm
 
 
-def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g, Fx, A_rbmle):
+def TrainNN(lda, eta, U, m, x, r, theta_0, d, l, g, Fx):
 
     theta_now = theta_0.clone()
     # theta_now.requires_grad = True
 
     for i in range(U):
         # theta_now.detach().requires_grad = True
-        theta_grad, l2norm = L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx, A_rbmle)
+        theta_grad, l2norm = L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx)
         if i == U-1:
             L2norm.append(l2norm)
         # if i==20 and len(Fx)==300:
@@ -308,12 +305,12 @@ for expInd in tqdm(range(numExps)):
 
         maxMean = np.max(meanRewards)
     #------------------------------------------------------------------------------------------------
-        # mPos  = methods.index("lin_ucb")
-        # startTime = time.time()
-        # arm = lin_ucb(contexts, A_linucb, b_linucb, alpha)
-        # duration = time.time()-startTime
-        # allRunningTimes[mPos][expInd][t-1] = duration
-        # allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
+        mPos  = methods.index("lin_ucb")
+        startTime = time.time()
+        arm = lin_ucb(contexts, A_linucb, b_linucb, alpha)
+        duration = time.time()-startTime
+        allRunningTimes[mPos][expInd][t-1] = duration
+        allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
         # print('regrets: ', str(np.sum(allRegrets[mPos][expInd])))
 	# TODO: Update A_linucb, b_linucb
         # A_linucb=A_linucb+np.matmul(contexts[arm], np.transpose(contexts[arm]))
@@ -346,7 +343,7 @@ for expInd in tqdm(range(numExps)):
         # print("meanRewards[arm]= ",  meanRewards[arm])
         print('t: ' + str(t))
         # lr = decayed_learning_rate(1e-5, t, 300, 0.99)
-        theta_n = TrainNN(0.01, 1e-4, t if t<200 else 200, 40, x, r, theta_0, len(theta), 2, g, torch.tensor(Fx).cuda(), A_rbmle)
+        theta_n = TrainNN(0.01, 1e-4, t if t<200 else 200, 40, x, r, theta_0, len(theta), 2, g, Fx)
         A_rbmle = A_rbmle + torch.matmul(grad_now, grad_now.t()) / 40
 
     # if expInd == 0:
@@ -358,30 +355,30 @@ for expInd in tqdm(range(numExps)):
 	# End of TODO
 
 #------------------------------------------------------------------------------------------------------
-# np.random.seed(seed)
-# allContexts_forSeedReset = generate_norm_contexts(contextMus, contextSigma, numExps, T, numActions, isTimeVary)
-# allMeanRewards_forSeedReset, allRewards_forSeedReset = generate_rewards(theta, allContexts, isTimeVary, T, rewardSigma)
-# for expInd in tqdm(range(numExps)):
-#     # ts
-#     A_lints = np.eye(len(theta))
-#     # print(len(theta))
-#     b_lints = np.zeros(len(theta))
-#     R_lints = rewardSigma
-#     delta_lints = 0.5
-#     epsilon_lints = 0.9
-#     v_lints = R_lints * np.sqrt(24 * len(theta) * np.log(1 / delta_lints))
-#     mPos = methods.index("lin_ts")
-#     for t in range(1, T+1):
-#         contexts = allContexts[expInd, t-1, :] if isTimeVary else allContexts[expInd, :]
-#         rewards = allRewards[expInd, t-1, :]
-#         meanRewards = allMeanRewards[expInd, t-1, :]
-#         maxMean = np.max(meanRewards)
+np.random.seed(seed)
+allContexts_forSeedReset = generate_norm_contexts(contextMus, contextSigma, numExps, T, numActions, isTimeVary)
+allMeanRewards_forSeedReset, allRewards_forSeedReset = generate_rewards(theta, allContexts, isTimeVary, T, rewardSigma)
+for expInd in tqdm(range(numExps)):
+    # ts
+    A_lints = np.eye(len(theta))
+    # print(len(theta))
+    b_lints = np.zeros(len(theta))
+    R_lints = rewardSigma
+    delta_lints = 0.5
+    epsilon_lints = 0.9
+    v_lints = R_lints * np.sqrt(24 * len(theta) * np.log(1 / delta_lints))
+    mPos = methods.index("lin_ts")
+    for t in range(1, T+1):
+        contexts = allContexts[expInd, t-1, :] if isTimeVary else allContexts[expInd, :]
+        rewards = allRewards[expInd, t-1, :]
+        meanRewards = allMeanRewards[expInd, t-1, :]
+        maxMean = np.max(meanRewards)
         
-#         startTime = time.time()
-#         arm = lin_ts(contexts, A_lints, b_lints, v_lints)
-#         duration = time.time()-startTime
-#         allRunningTimes[mPos][expInd][t-1] = duration
-#         allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
+        startTime = time.time()
+        arm = lin_ts(contexts, A_lints, b_lints, v_lints)
+        duration = time.time()-startTime
+        allRunningTimes[mPos][expInd][t-1] = duration
+        allRegrets[mPos][expInd][t-1] =  maxMean - meanRewards[arm]
 	# TODO: Update A_lints, b_lints
 
 	# End of TODO
