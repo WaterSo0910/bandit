@@ -53,8 +53,8 @@ class Net(nn.Module):
 theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
-isTimeVary = False
-numExps = 50
+isTimeVary = True
+numExps = 3
 T = int(3e4)
 seed = 46
 path = ""

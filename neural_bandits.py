@@ -54,8 +54,8 @@ class Net(nn.Module):
 theta = np.array([-0.3,0.5,0.8])
 excelID = 2
 numActions = 10
-isTimeVary = False
-numExps = 50
+isTimeVary = True
+numExps = 3
 T = int(3e4)
 seed = 46
 path = ""
@@ -227,7 +227,7 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx, A_rbmle):
     model.state_dict()['fc1.weight'][:] = torch.narrow(theta_now, 1, 0, 120).reshape(40, 3)
     model.state_dict()['fc2.weight'][:] = torch.narrow(theta_now, 1, 120, 40).reshape(1, 40)
 
-    # fx = model.forward(x)
+    fx = model.forward(x[-1])
     model.zero_grad()
 
     weight = model.fc1.weight.flatten()
@@ -235,7 +235,7 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx, A_rbmle):
     # print("fx ", fx)
 
     loss = nn.MSELoss(reduction='mean')
-    ll = loss(Fx.double()[-1].squeeze(-1), r.double()[-1].squeeze(-1))
+    ll = loss(fx.double(), r.double()[-1].squeeze(-1))
 
     norm = torch.norm(theta_now-theta_0) * m * lda
     ll += norm
@@ -250,7 +250,7 @@ def L(x, r, theta_now, m, lda, theta_0, d, l, g, Fx, A_rbmle):
 
     theta_grad = model.fc1.weight.grad.flatten()
     theta_grad = torch.cat((theta_grad, model.fc2.weight.grad.flatten())).reshape(1, 160)
-    theta_grad = torch.mm(theta_grad, torch.mm(torch.inverse(A_rbmle), g))
+    # theta_grad = torch.mm(theta_grad.double(), torch.mm(torch.inverse(A_rbmle.double()).double(), g.double()).double().double()).double()
     return theta_grad, norm
 
 
