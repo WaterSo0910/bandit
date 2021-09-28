@@ -18,6 +18,7 @@ Let's take Netflix recommendation system as an example,  we consider 3 main cond
 2. The size of parameters in NN (Theta)
 3. The number of movies (Arm)
 ## Algorithm implementation
+- NeuralUCB algorithm 
 ![](https://i.imgur.com/2YStxKI.png)
 
 ## Contribution
@@ -32,3 +33,15 @@ We proposed 3 methods:
 
 - 3 extreme case vs original case
 ![](https://i.imgur.com/4AsVtlM.png)
+
+
+## References
+- ### A Contextual-Bandit Approach to Personalized News Article Recommendation https://arxiv.org/pdf/1003.0146.pdf
+- ### Unbiased Offline Evaluation of Contextual-bandit-based News Article Recommendation Algorithms  https://arxiv.org/pdf/1003.5956.pdf
+    Used algorithm 2 as a policy evaluator (for finite data stream)
+- ### (AISTATS 2011) Contextual Bandits with Linear Payoff Functions
+- ### (ICML 2020) Neural Contextual Bandits with UCB-based Exploration
+- ### (NeurIPS 2011) Improved Algorithms for Linear Stochastic Bandits
+- ### (NeurIPS 2017) Scalable Generalized Linear Bandits: Online Computation and Hashing
+
+> End
