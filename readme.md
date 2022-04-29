@@ -8,7 +8,7 @@ disqus: hackmd
 
 > 組員：蔡育呈、王耀德、周俊毅
 >
-> 指導老師：謝秉鈞
+> 指導老師：謝秉均
 ## Background
 In the latest research, we could found a better choice(Neural Network) for applying on recommendation system. However, its cost is too large so that it haven't been popular nowadays.
 
